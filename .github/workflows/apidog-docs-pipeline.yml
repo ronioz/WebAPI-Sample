@@ -1,34 +1,29 @@
-# Apidog docs pipeline — WebAPI-Sample (in-repo source)
+# Regenerated Apidog docs pipeline for WebAPI-Sample.
+# Source API lives in this repo — CI skips git pull.
 #
-# This repo contains both the ASP.NET sample API and the docs pipeline.
-# On CI the checked-out tree IS the source — pull is skipped by default.
-#
-# Required secrets:
-#   APIDOG_BASE_URL, APIDOG_PROJECT_ID, APIDOG_ACCESS_TOKEN
-#   OPENAPI_MODULE_NAME=SampleWebApiAspNetCore  (or set as env below)
-#
-# Optional:
-#   CURSOR_API_KEY (+ CURSOR_MODEL) when run_docs=true
-#   REPORT_EMAIL_TO, SMTP_* when run_email=true
-#   APIDOG_VERIFY_SSL=false for broken/self-signed TLS
+# Secrets (Settings → Secrets and variables → Actions):
+#   Required: APIDOG_BASE_URL, APIDOG_PROJECT_ID, APIDOG_ACCESS_TOKEN
+#   Optional: CURSOR_API_KEY, CURSOR_MODEL, APIDOG_VERIFY_SSL,
+#             REPORT_EMAIL_TO, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM
 #
 name: Apidog docs pipeline
 
 on:
   schedule:
+    # 1st of each month, 06:00 UTC
     - cron: "0 6 1 * *"
   workflow_dispatch:
     inputs:
       run_docs:
-        description: "Run Cursor docs steps 2–4 (needs CURSOR_API_KEY)"
+        description: "Run Cursor docs (steps 2–4). Needs CURSOR_API_KEY."
         type: boolean
         default: false
       run_email:
-        description: "Send README/intro email (step 7)"
+        description: "Email README/intro (step 7). Needs SMTP secrets."
         type: boolean
         default: false
       continue_on_error:
-        description: "Continue remaining steps after a failure"
+        description: "Continue after a failed step"
         type: boolean
         default: false
 
@@ -36,18 +31,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: apidog-docs-pipeline
+  group: apidog-docs-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   pipeline:
-    name: openapi → apidog (+ optional docs/email)
+    name: OpenAPI → Apidog
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
 
     env:
       CI: "true"
-      # Source is this repo (checked out below) — do not re-clone
       SOURCE_REPO_DIR: "."
       OPENAPI_MODULE_NAME: SampleWebApiAspNetCore
       OPENAPI_PROJECT: SampleWebApiAspNetCore/SampleWebApiAspNetCore.csproj
@@ -85,45 +79,40 @@ jobs:
             9.0.x
 
       - name: Install Cursor CLI
-        if: ${{ inputs.run_docs }}
-        env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docs }}
         run: |
           set -euo pipefail
           if [ -z "${CURSOR_API_KEY:-}" ]; then
-            echo "::error::CURSOR_API_KEY secret is required when run_docs=true"
+            echo "::error::Set secret CURSOR_API_KEY when run_docs=true"
             exit 1
           fi
           curl -fsSL https://cursor.com/install | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           agent --version || cursor-agent --version
 
-      - name: Validate Apidog config
+      - name: Validate Apidog secrets
         run: |
           set -euo pipefail
           missing=0
           for key in APIDOG_BASE_URL APIDOG_PROJECT_ID APIDOG_ACCESS_TOKEN; do
             if [ -z "${!key:-}" ]; then
-              echo "::error::Missing required secret: $key"
+              echo "::error::Missing secret: $key"
               missing=1
             fi
           done
           exit "$missing"
 
-      - name: Build orchestrator arguments
-        id: args
+      - name: Run pipeline
         shell: bash
         run: |
           set -euo pipefail
-          # Always skip pull — source is this checkout
           args=(--skip-pull --module SampleWebApiAspNetCore)
 
-          run_docs="${{ inputs.run_docs }}"
-          run_email="${{ inputs.run_email }}"
-          # Scheduled monthly run: OpenAPI + upload only (docs/email opt-in via manual run)
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            run_docs=false
-            run_email=false
+          run_docs=false
+          run_email=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run_docs="${{ inputs.run_docs }}"
+            run_email="${{ inputs.run_email }}"
           fi
 
           if [ "$run_docs" != "true" ]; then
@@ -132,17 +121,14 @@ jobs:
           if [ "$run_email" != "true" ]; then
             args+=(--skip-email)
           fi
-          if [ "${{ inputs.continue_on_error }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.continue_on_error }}" = "true" ]; then
             args+=(--continue-on-error)
           fi
 
-          echo "args=${args[*]}" >> "$GITHUB_OUTPUT"
           echo "Running: python src/orchestrator.py ${args[*]}"
+          python src/orchestrator.py "${args[@]}"
 
-      - name: Run pipeline
-        run: python src/orchestrator.py ${{ steps.args.outputs.args }}
-
-      - name: Upload generated artifacts
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
