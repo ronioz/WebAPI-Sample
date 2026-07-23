@@ -1,0 +1,4 @@
+﻿{
+  "_comment": "Create module once in Apidog UI, paste moduleId. Key must match OPENAPI_MODULE_NAME / data/<Name>.openapi.json",
+  "SampleWebApiAspNetCore": "300358"
+}
