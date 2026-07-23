@@ -86,9 +86,22 @@ jobs:
             echo "::error::Set secret CURSOR_API_KEY when run_docs=true"
             exit 1
           fi
-          curl -fsSL https://cursor.com/install | bash
+          # Official install puts the binary in ~/.cursor/bin (not ~/.local/bin)
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          agent --version || cursor-agent --version
+          export PATH="$HOME/.cursor/bin:$HOME/.local/bin:$PATH"
+          if command -v agent >/dev/null 2>&1; then
+            agent --version
+          elif command -v cursor-agent >/dev/null 2>&1; then
+            cursor-agent --version
+          else
+            echo "::error::Cursor CLI installed but 'agent' not on PATH"
+            echo "Looked in: $HOME/.cursor/bin $HOME/.local/bin"
+            ls -la "$HOME/.cursor/bin" "$HOME/.local/bin" 2>/dev/null || true
+            find "$HOME" -maxdepth 4 -type f \( -name agent -o -name cursor-agent \) 2>/dev/null || true
+            exit 1
+          fi
 
       - name: Validate Apidog secrets
         run: |
