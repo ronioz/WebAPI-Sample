@@ -1,10 +1,13 @@
 # Regenerated Apidog docs pipeline for WebAPI-Sample.
 # Source API lives in this repo — CI skips git pull.
 #
-# Secrets (Settings → Secrets and variables → Actions):
+# Secrets (Settings → Secrets and variables → Actions → Repository secrets):
 #   Required: APIDOG_BASE_URL, APIDOG_PROJECT_ID, APIDOG_ACCESS_TOKEN
 #   Optional: CURSOR_API_KEY, CURSOR_MODEL, APIDOG_VERIFY_SSL,
 #             REPORT_EMAIL_TO, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM
+#
+# IMPORTANT: use Repository secrets (not Environment secrets), unless you set
+# the "github_environment" input to match your Environment name.
 #
 name: Apidog docs pipeline
 
@@ -39,6 +42,8 @@ jobs:
     name: OpenAPI → Apidog
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # To use Environment secrets, uncomment and set the name:
+    # environment: production
 
     env:
       CI: "true"
@@ -83,9 +88,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${CURSOR_API_KEY:-}" ]; then
-            echo "::error::Set secret CURSOR_API_KEY when run_docs=true"
+            echo "::error::CURSOR_API_KEY is empty in this job."
+            echo "Add a Repository secret named exactly CURSOR_API_KEY:"
+            echo "  Settings → Secrets and variables → Actions → Repository secrets"
+            echo "If you stored it under Environments instead, re-run with"
+            echo "  github_environment = <your environment name>"
+            echo "Do not use Variables — it must be a Secret."
             exit 1
           fi
+          echo "CURSOR_API_KEY is set (length=${#CURSOR_API_KEY})"
           # Official install puts the binary in ~/.cursor/bin (not ~/.local/bin)
           curl https://cursor.com/install -fsS | bash
           echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
